@@ -1,0 +1,18 @@
+[project]
+name = "marketplace-search"
+version = "0.1.0"
+description = "Agregator ofert z OLX, Allegro, Allegro Lokalnie i Facebook Marketplace"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn>=0.28.0",
+    "httpx>=0.27.0",
+    "beautifulsoup4>=4.12.3",
+    "pydantic>=2.6.0",
+    "sqlalchemy>=2.0.28",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

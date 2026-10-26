@@ -1,0 +1,8 @@
+# Podstawowe zależności dla backendu MarketplaceSearch
+# Aplikacja działa także bez instalacji dodatkowych bibliotek na czystym Pythonie 3.10+ (serwer wbudowany)
+fastapi>=0.110.0
+uvicorn>=0.28.0
+httpx>=0.27.0
+beautifulsoup4>=4.12.3
+pydantic>=2.6.0
+sqlalchemy>=2.0.28
