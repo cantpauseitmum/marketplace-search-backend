@@ -16,17 +16,25 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+from contextlib import contextmanager
+
+
 class DatabaseManager:
     def __init__(self, db_path: str = DEFAULT_DB_PATH):
         self.db_path = db_path
         self._init_db()
 
-    def get_connection(self) -> sqlite3.Connection:
+    @contextmanager
+    def get_connection(self):
         conn = sqlite3.connect(self.db_path, timeout=10.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA journal_mode = WAL")
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def _init_db(self):
         """Inicjalizuje schemat bazy jeśli tabele nie istnieją."""
@@ -158,14 +166,21 @@ class DatabaseManager:
         limit: int = 100,
         offset: int = 0,
         only_bookmarked: bool = False,
+        query_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Pobiera oferty z bazy na podstawie filtrów."""
         conditions = []
         params = []
 
+        if query_id is not None:
+            conditions.append("query_id = ?")
+            params.append(query_id)
+
         if query:
-            conditions.append("(title LIKE ? OR description LIKE ?)")
-            params.extend([f"%{query}%", f"%{query}%"])
+            words = [w.strip() for w in query.split() if w.strip()]
+            for w in words:
+                conditions.append("(title LIKE ? OR description LIKE ?)")
+                params.extend([f"%{w}%", f"%{w}%"])
 
         if location:
             conditions.append("(location LIKE ? OR city LIKE ?)")

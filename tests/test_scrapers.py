@@ -108,7 +108,7 @@ class TestMarketplaceSearch(unittest.TestCase):
         self.assertIn("Facebook Marketplace", res["stats_by_source"])
 
         # Sprawdzenie bazy danych
-        db_res = self.db.get_offers(query="Switch 2")
+        db_res = self.db.get_offers(query_id=res["query_id"])
         self.assertEqual(db_res["total"], res["total_count"])
 
         # Sprawdzenie zakładek

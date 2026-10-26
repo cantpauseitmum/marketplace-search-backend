@@ -1,14 +1,21 @@
 """
 Scraper serwisu OLX (olx.pl)
-Wyszukuje oferty po frazie, lokalizacji (miasto + promień) oraz w tytule/opisie.
+Pobiera rzeczywiste, aktywne oferty z OLX (API + pre-renderowany stan HTML).
+Obsługuje wyszukiwanie po słowach kluczowych, lokalizacji (miasto + promień) oraz cenie.
 """
 import json
 import re
 import time
-import urllib.request
 import urllib.parse
-import urllib.error
+import urllib.request
 from typing import List, Optional
+
+try:
+    from curl_cffi import requests as cffi_requests
+    HAS_CURL_CFFI = True
+except ImportError:
+    HAS_CURL_CFFI = False
+
 from .base import BaseScraper, Offer, SearchQuery, ScraperResult
 from .mock_data import generate_mock_offers
 try:
@@ -26,7 +33,7 @@ class OLXScraper(BaseScraper):
 
     def build_url(self, query: SearchQuery) -> str:
         """Buduje URL wyszukiwania w OLX zgodny z parametrami."""
-        query_slug = urllib.parse.quote(query.text.strip())
+        query_slug = urllib.parse.quote(query.text.strip().replace(" ", "-"))
         city_slug = slugify_city(query.location) if query.location else ""
 
         if city_slug:
@@ -37,8 +44,6 @@ class OLXScraper(BaseScraper):
         params = []
         if query.radius_km > 0 and city_slug:
             params.append(f"search[dist]={query.radius_km}")
-        if query.search_in_description:
-            params.append("search[description]=1")
         if query.min_price is not None:
             params.append(f"search[filter_float_price:from]={int(query.min_price)}")
         if query.max_price is not None:
@@ -50,129 +55,130 @@ class OLXScraper(BaseScraper):
 
     def search(self, query: SearchQuery) -> ScraperResult:
         start_time = time.time()
-        url = self.build_url(query)
+        offers: List[Offer] = []
+        seen_urls = set()
+
+        if query.location:
+            # Gdy podano lokalizację, używamy widoku web ze stanem pre-renderowanym (obsługuje miasto i promień)
+            web_offers = self._search_via_web(query)
+            for o in web_offers:
+                if o.url not in seen_urls:
+                    seen_urls.add(o.url)
+                    offers.append(o)
+        else:
+            # Wyszukiwanie ogólnokrajowe: łączymy API OLX oraz widok webowy
+            api_offers = self._search_via_api(query)
+            for o in api_offers:
+                if o.url not in seen_urls:
+                    seen_urls.add(o.url)
+                    offers.append(o)
+
+            web_offers = self._search_via_web(query)
+            for o in web_offers:
+                if o.url not in seen_urls:
+                    seen_urls.add(o.url)
+                    offers.append(o)
+
+        latency_ms = int((time.time() - start_time) * 1000)
+
+        # Weryfikacja filtrów
+        filtered = [o for o in offers if self.filter_offer(o, query)]
+
+        if filtered:
+            return ScraperResult(
+                source=self.name,
+                status="OK",
+                items=filtered,
+                latency_ms=latency_ms,
+                message=f"Pobrano {len(filtered)} rzeczywistych ofert z OLX.pl",
+            )
+
+        # Jeśli brak ofert
+        if ENABLE_MOCK_FALLBACK:
+            mock_items = generate_mock_offers(self.name, query, count=5)
+            return ScraperResult(
+                source=self.name,
+                status="FALLBACK",
+                items=mock_items,
+                latency_ms=latency_ms,
+                message="Brak bezpośrednich ofert na OLX (tryb demonstracyjny)",
+            )
+
+        return ScraperResult(
+            source=self.name,
+            status="OK",
+            items=[],
+            latency_ms=latency_ms,
+            message="Brak ogłoszeń spełniających kryteria na OLX",
+        )
+
+    def _search_via_api(self, query: SearchQuery) -> List[Offer]:
+        offers: List[Offer] = []
+        query_enc = urllib.parse.quote(query.text.strip())
+        url = f"https://www.olx.pl/api/v1/offers/?query={query_enc}&offset=0&limit=50"
+        if query.min_price is not None:
+            url += f"&filter_float_price:from={int(query.min_price)}"
+        if query.max_price is not None:
+            url += f"&filter_float_price:to={int(query.max_price)}"
+
+        headers = {
+            "Referer": "https://www.olx.pl/",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8",
+        }
 
         try:
-            req = urllib.request.Request(url, headers=DEFAULT_HEADERS)
-            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as response:
-                html = response.read().decode("utf-8", errors="ignore")
-
-            offers = self._parse_html(html, query)
-            latency_ms = int((time.time() - start_time) * 1000)
-
-            if offers:
-                return ScraperResult(
-                    source=self.name,
-                    status="OK",
-                    items=offers,
-                    latency_ms=latency_ms,
-                    message=f"Pobrano {len(offers)} ofert z OLX.pl",
-                )
+            if HAS_CURL_CFFI:
+                resp = cffi_requests.get(url, impersonate="chrome", headers=headers, timeout=REQUEST_TIMEOUT)
+                if resp.status_code == 200:
+                    data = resp.json().get("data", [])
+                    for item in data:
+                        offer = self._parse_api_item(item, query)
+                        if offer:
+                            offers.append(offer)
             else:
-                # Jeśli scraper nie znalazł wyników w HTML, a fallback jest włączony
-                if ENABLE_MOCK_FALLBACK:
-                    mock_items = generate_mock_offers(self.name, query, count=6)
-                    return ScraperResult(
-                        source=self.name,
-                        status="FALLBACK",
-                        items=mock_items,
-                        latency_ms=latency_ms,
-                        message="Brak bezpośrednich wyników w OLX, wygenerowano oferty podglądowe",
-                    )
-                return ScraperResult(
-                    source=self.name,
-                    status="OK",
-                    items=[],
-                    latency_ms=latency_ms,
-                    message="Brak ogłoszeń spełniających kryteria na OLX",
-                )
-
-        except urllib.error.HTTPError as e:
-            e.close()
-            latency_ms = int((time.time() - start_time) * 1000)
-            if ENABLE_MOCK_FALLBACK:
-                mock_items = generate_mock_offers(self.name, query, count=6)
-                return ScraperResult(
-                    source=self.name,
-                    status="FALLBACK",
-                    items=mock_items,
-                    latency_ms=latency_ms,
-                    message=f"OLX (kod {e.code} - tryb demonstracyjny)",
-                )
-            return ScraperResult(
-                source=self.name,
-                status="ERROR",
-                items=[],
-                latency_ms=latency_ms,
-                message=f"Błąd HTTP {e.code} OLX",
-            )
-        except Exception as e:
-            latency_ms = int((time.time() - start_time) * 1000)
-            if ENABLE_MOCK_FALLBACK:
-                mock_items = generate_mock_offers(self.name, query, count=6)
-                return ScraperResult(
-                    source=self.name,
-                    status="FALLBACK",
-                    items=mock_items,
-                    latency_ms=latency_ms,
-                    message=f"OLX (tryb demonstracyjny / ochrona antybotowa: {str(e)[:60]})",
-                )
-            return ScraperResult(
-                source=self.name,
-                status="ERROR",
-                items=[],
-                latency_ms=latency_ms,
-                message=f"Błąd połączenia z OLX: {str(e)}",
-            )
-
-    def _parse_html(self, html: str, query: SearchQuery) -> List[Offer]:
-        """Ekstrakcja ofert z danych pre-renderowanych OLX (__PRERENDERED_STATE__) lub HTML."""
-        offers: List[Offer] = []
-
-        # 1. Próba parsowania stanu JSON z __PRERENDERED_STATE__
-        match = re.search(r'window\.__PRERENDERED_STATE__\s*=\s*(".*?"|\{.*?\});', html, re.DOTALL)
-        if match:
-            raw_json = match.group(1)
-            try:
-                # Czasami stan jest zakodowanym stringiem JSON
-                if raw_json.startswith('"') and raw_json.endswith('"'):
-                    raw_json = json.loads(raw_json)
-                data = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
-                ads = data.get("listing", {}).get("listing", {}).get("ads", [])
-                for ad in ads:
-                    offer = self._parse_ad_json(ad)
-                    if offer and self.filter_offer(offer, query):
-                        offers.append(offer)
-                if offers:
-                    return offers
-            except Exception:
-                pass
-
-        # 2. Parsowanie kart HTML jako metoda zapasowa
-        card_pattern = re.compile(r'<div[^>]*data-cy="l-card"[^>]*>.*?</div>\s*</div>\s*</div>', re.DOTALL)
-        cards = card_pattern.findall(html)
-        for card in cards:
-            offer = self._parse_ad_card_html(card)
-            if offer and self.filter_offer(offer, query):
-                offers.append(offer)
+                req = urllib.request.Request(url, headers={**DEFAULT_HEADERS, **headers})
+                with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as r:
+                    data = json.loads(r.read().decode()).get("data", [])
+                    for item in data:
+                        offer = self._parse_api_item(item, query)
+                        if offer:
+                            offers.append(offer)
+        except Exception:
+            pass
 
         return offers
 
-    def _parse_ad_json(self, ad: dict) -> Optional[Offer]:
+    def _parse_api_item(self, item: dict, query: SearchQuery) -> Optional[Offer]:
         try:
-            ad_id = str(ad.get("id"))
-            title = ad.get("title", "").strip()
-            if not title:
+            item_id = str(item.get("id"))
+            title = (item.get("title") or "").strip()
+            url = item.get("url")
+            if not title or not url:
                 return None
 
-            # Cena
-            price_data = ad.get("price", {})
-            price_val = price_data.get("regularPrice", {}).get("value") or price_data.get("value")
-            price = float(price_val) if price_val is not None else None
-            price_formatted = price_data.get("displayValue") or (f"{price:.0f} zł" if price else "Do negocjacji")
+            loc = item.get("location", {})
+            city = loc.get("city", {}).get("name") or loc.get("cityName") or ""
+            district = loc.get("district", {}).get("name") or loc.get("districtName") or ""
+            location_str = f"{city}, {district}" if district else (city or "Polska")
 
-            # Zdjęcie
-            photos = ad.get("photos", [])
+            # Jeśli szukamy w konkretnym mieście, a oferta pochodzi z innego miasta i promień = 0
+            if query.location and query.radius_km == 0:
+                city_clean = city.lower().strip()
+                target_clean = query.location.lower().strip()
+                if target_clean not in city_clean and city_clean not in target_clean:
+                    return None
+
+            price_val = None
+            price_formatted = "Do negocjacji"
+            for p in item.get("params", []):
+                if p.get("key") == "price":
+                    val = p.get("value", {})
+                    price_val = val.get("value")
+                    price_formatted = val.get("label") or (f"{price_val} zł" if price_val else "Do negocjacji")
+                    break
+
+            photos = item.get("photos", [])
             image_url = ""
             if photos and isinstance(photos, list):
                 first = photos[0]
@@ -181,22 +187,103 @@ class OLXScraper(BaseScraper):
                 elif isinstance(first, str):
                     image_url = first
 
-            # Lokalizacja
+            desc = item.get("description", "")
+            created_at = item.get("last_refresh_time") or item.get("created_time") or ""
+
+            return Offer(
+                source=self.name,
+                external_id=f"olx-{item_id}",
+                title=title,
+                price=float(price_val) if price_val is not None else None,
+                currency="PLN",
+                price_formatted=price_formatted,
+                url=url,
+                image_url=image_url,
+                location=location_str,
+                city=city,
+                description=desc,
+                published_at=created_at[:10] if created_at else "Niedawno",
+            )
+        except Exception:
+            return None
+
+    def _search_via_web(self, query: SearchQuery) -> List[Offer]:
+        offers: List[Offer] = []
+        url = self.build_url(query)
+
+        headers = {
+            "Referer": "https://www.olx.pl/",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8",
+        }
+
+        try:
+            if HAS_CURL_CFFI:
+                resp = cffi_requests.get(url, impersonate="chrome", headers=headers, timeout=REQUEST_TIMEOUT)
+                if resp.status_code == 200:
+                    offers = self._parse_html(resp.text, query)
+            else:
+                req = urllib.request.Request(url, headers={**DEFAULT_HEADERS, **headers})
+                with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as r:
+                    html = r.read().decode("utf-8", errors="ignore")
+                    offers = self._parse_html(html, query)
+        except Exception:
+            pass
+
+        return offers
+
+    def _parse_html(self, html: str, query: SearchQuery) -> List[Offer]:
+        """Ekstrakcja ofert z danych pre-renderowanych OLX (__PRERENDERED_STATE__) lub HTML."""
+        offers: List[Offer] = []
+
+        match = re.search(r'window\.__PRERENDERED_STATE__\s*=\s*(".*?"|\{.*?\});', html, re.DOTALL)
+        if match:
+            raw_json = match.group(1)
+            try:
+                if raw_json.startswith('"') and raw_json.endswith('"'):
+                    raw_json = json.loads(raw_json)
+                data = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
+                ads = data.get("listing", {}).get("listing", {}).get("ads", [])
+                for ad in ads:
+                    offer = self._parse_ad_json(ad)
+                    if offer:
+                        offers.append(offer)
+                if offers:
+                    return offers
+            except Exception:
+                pass
+
+        return offers
+
+    def _parse_ad_json(self, ad: dict) -> Optional[Offer]:
+        try:
+            ad_id = str(ad.get("id"))
+            title = (ad.get("title") or "").strip()
+            url = ad.get("url") or ""
+            if not title or not url:
+                return None
+
+            price_data = ad.get("price", {})
+            price_val = price_data.get("regularPrice", {}).get("value")
+            price = float(price_val) if price_val is not None else None
+            price_formatted = price_data.get("displayValue") or (f"{price:.0f} zł" if price else "Do negocjacji")
+
+            photos = ad.get("photos", [])
+            image_url = ""
+            if photos and isinstance(photos, list):
+                first = photos[0]
+                if isinstance(first, str):
+                    image_url = first
+                elif isinstance(first, dict):
+                    image_url = first.get("link", "").replace("{width}x{height}", "600x450")
+
             loc = ad.get("location", {})
-            city = loc.get("city", {}).get("name", "")
-            district = loc.get("district", {}).get("name", "")
-            location_str = f"{city}, {district}" if district else city
+            city = loc.get("cityName") or loc.get("cityNormalizedName", "").capitalize()
+            district = loc.get("districtName", "")
+            location_str = f"{city}, {district}" if district else (city or "Polska")
 
-            # URL
-            url = ad.get("url", "")
-            if url and not url.startswith("http"):
-                url = f"https://www.olx.pl{url}"
-
-            # Data
-            created_time = ad.get("createdTime", "")
-
-            # Opis
             desc = ad.get("description", "")
+            created_time = ad.get("createdTime", "")
 
             return Offer(
                 source=self.name,
@@ -210,60 +297,7 @@ class OLXScraper(BaseScraper):
                 location=location_str,
                 city=city,
                 description=desc,
-                published_at=created_time,
-            )
-        except Exception:
-            return None
-
-    def _parse_ad_card_html(self, card_html: str) -> Optional[Offer]:
-        try:
-            # Tytuł
-            title_match = re.search(r'<h4[^>]*>(.*?)</h4>', card_html, re.DOTALL)
-            title = re.sub(r'<[^>]+>', '', title_match.group(1)).strip() if title_match else ""
-            if not title:
-                return None
-
-            # Link
-            link_match = re.search(r'href="([^"]+)"', card_html)
-            url = link_match.group(1) if link_match else ""
-            if url and not url.startswith("http"):
-                url = f"https://www.olx.pl{url}"
-
-            # Cena
-            price_match = re.search(r'<p[^>]*data-testid="ad-price"[^>]*>(.*?)</p>', card_html)
-            price_str = re.sub(r'<[^>]+>', '', price_match.group(1)).strip() if price_match else ""
-            price_val = None
-            if price_str:
-                num = re.sub(r'[^\d,.]', '', price_str.replace(" ", "")).replace(",", ".")
-                try:
-                    price_val = float(num)
-                except ValueError:
-                    pass
-
-            # Zdjęcie
-            img_match = re.search(r'<img[^>]+src="([^"]+)"', card_html)
-            image_url = img_match.group(1) if img_match else ""
-
-            # Lokalizacja
-            loc_match = re.search(r'<p[^>]*data-testid="location-date"[^>]*>(.*?)</p>', card_html)
-            location_date = re.sub(r'<[^>]+>', '', loc_match.group(1)).strip() if loc_match else ""
-            loc_parts = location_date.split(" - ")
-            location_str = loc_parts[0] if loc_parts else ""
-            date_str = loc_parts[1] if len(loc_parts) > 1 else ""
-
-            return Offer(
-                source=self.name,
-                external_id=f"olx-{hash(url) % 100000000}",
-                title=title,
-                price=price_val,
-                currency="PLN",
-                price_formatted=price_str or (f"{price_val:.0f} zł" if price_val else "Do negocjacji"),
-                url=url,
-                image_url=image_url,
-                location=location_str,
-                city=location_str.split(",")[0].strip(),
-                description="",
-                published_at=date_str,
+                published_at=created_time[:10] if created_time else "Niedawno",
             )
         except Exception:
             return None

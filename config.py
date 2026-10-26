@@ -18,8 +18,8 @@ ALLEGRO_CLIENT_SECRET = os.environ.get("ALLEGRO_CLIENT_SECRET", "")
 # Ciasteczka sesyjne FB Marketplace (opcjonalne)
 FACEBOOK_COOKIE = os.environ.get("FACEBOOK_COOKIE", "")
 
-# Tryb symulacji / fallbacku gdy bot protection blokuje zapytanie lub brak sieci
-ENABLE_MOCK_FALLBACK = os.environ.get("ENABLE_MOCK_FALLBACK", "true").lower() == "true"
+# Tryb symulacji / fallbacku (domyślnie wyłączony, aby nigdy nie generować nieistniejących linków)
+ENABLE_MOCK_FALLBACK = os.environ.get("ENABLE_MOCK_FALLBACK", "false").lower() == "true"
 
 # Timeout dla zapytań HTTP do marketplace'ów w sekundach
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", 8))
