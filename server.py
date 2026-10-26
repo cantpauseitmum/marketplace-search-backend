@@ -11,9 +11,20 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from typing import Dict, Any
 
 # Ścieżki projektu
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PARENT_DIR = os.path.dirname(CURRENT_DIR)
+
+for p in (PARENT_DIR, CURRENT_DIR):
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+# Lokalizacja katalogu frontend (MarketplaceSearch/frontend lub backend/frontend)
+if os.path.exists(os.path.join(PARENT_DIR, "frontend", "index.html")):
+    FRONTEND_DIR = os.path.join(PARENT_DIR, "frontend")
+elif os.path.exists(os.path.join(CURRENT_DIR, "frontend", "index.html")):
+    FRONTEND_DIR = os.path.join(CURRENT_DIR, "frontend")
+else:
+    FRONTEND_DIR = os.path.join(PARENT_DIR, "frontend")
 
 try:
     from config import PORT, HOST
@@ -23,8 +34,6 @@ except ImportError:
     from backend.config import PORT, HOST
     from backend.scrapers.aggregator import MarketplaceAggregator
     from database.db_manager import DatabaseManager
-
-FRONTEND_DIR = os.path.join(PROJECT_ROOT, "frontend")
 
 db_manager = DatabaseManager()
 aggregator = MarketplaceAggregator(db_manager)
@@ -79,29 +88,34 @@ class MarketplaceAPIHandler(SimpleHTTPRequestHandler):
             self._send_json({"status": "healthy", "service": "MarketplaceSearch Backend API", "version": "1.0.0"})
             return
 
-        if path == "/":
-            if os.path.exists(FRONTEND_DIR) and os.path.exists(os.path.join(FRONTEND_DIR, "index.html")):
-                self.path = "/index.html"
-                super().do_GET()
-            else:
-                self._send_json({
-                    "service": "MarketplaceSearch REST API",
-                    "version": "1.0.0",
-                    "status": "running",
-                    "endpoints": [
-                        "/api/search?q={query}&location={city}&radius={km}",
-                        "/api/offers?q={query}",
-                        "/api/sources",
-                        "/api/history",
-                        "/api/health"
-                    ]
-                })
-            return
+        # 6. Obsługa favicon / ikon przeglądarki (żeby nie generować błędów 404 w logach)
+        if path in ("/favicon.ico", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"):
+            icon_file = os.path.join(FRONTEND_DIR, path.lstrip("/"))
+            if not os.path.exists(icon_file):
+                self._set_headers(status=204)
+                return
 
-        # 6. Domyślne serwowanie plików statycznych jeśli katalog frontend istnieje
-        if path == "/" or not os.path.exists(os.path.join(FRONTEND_DIR, path.lstrip("/"))):
-            self.path = "/index.html"
-        super().do_GET()
+        # 7. Serwowanie plików frontendowych (SPA)
+        if os.path.exists(FRONTEND_DIR) and os.path.exists(os.path.join(FRONTEND_DIR, "index.html")):
+            req_file = os.path.join(FRONTEND_DIR, path.lstrip("/"))
+            if path == "/" or not os.path.exists(req_file):
+                self.path = "/index.html"
+            super().do_GET()
+            return
+        else:
+            self._send_json({
+                "service": "MarketplaceSearch REST API",
+                "version": "1.0.0",
+                "status": "running",
+                "endpoints": [
+                    "/api/search?q={query}&location={city}&radius={km}",
+                    "/api/offers?q={query}",
+                    "/api/sources",
+                    "/api/history",
+                    "/api/health"
+                ]
+            })
+            return
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -227,7 +241,7 @@ def run_server():
     print("=" * 65)
     print(f"🚀 MarketplaceSearch Serwer uruchomiony!")
     print(f"👉 Adres aplikacji:  http://localhost:{PORT}")
-    print(f"👉 API wyszukiwania: http://localhost:{PORT}/api/search?q=Switch+2")
+    print(f"👉 API wyszukiwania: http://localhost:{PORT}/api/search?q=konsola")
     print(f"👉 Źródła:          OLX, Allegro, Allegro Lokalnie, FB Marketplace")
     print("=" * 65)
     try:
