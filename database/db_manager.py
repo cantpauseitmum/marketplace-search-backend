@@ -177,10 +177,9 @@ class DatabaseManager:
             params.append(query_id)
 
         if query:
-            words = [w.strip() for w in query.split() if w.strip()]
-            for w in words:
-                conditions.append("(title LIKE ? OR description LIKE ?)")
-                params.extend([f"%{w}%", f"%{w}%"])
+            clean_q = query.strip()
+            conditions.append("(title LIKE ? OR description LIKE ?)")
+            params.extend([f"%{clean_q}%", f"%{clean_q}%"])
 
         if location:
             conditions.append("(location LIKE ? OR city LIKE ?)")

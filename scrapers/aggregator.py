@@ -51,7 +51,7 @@ class MarketplaceAggregator:
         query_text: str,
         location: str = "",
         radius_km: int = 0,
-        search_in_description: bool = True,
+        search_in_description: bool = False,
         min_price: Optional[float] = None,
         max_price: Optional[float] = None,
         sources: Optional[List[str]] = None,

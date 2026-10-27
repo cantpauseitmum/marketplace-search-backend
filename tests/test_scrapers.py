@@ -91,8 +91,33 @@ class TestMarketplaceSearch(unittest.TestCase):
         self.assertTrue(scraper.filter_offer(offer_in_desc, q1))
         self.assertTrue(offer_in_desc.matches_description)
 
-        q_no_desc = SearchQuery(text="Switch 2", search_in_description=False)
-        self.assertFalse(scraper.filter_offer(offer_in_desc, q_no_desc))
+        # Oferty które NIE powinny pasować do 'Switch 2'
+        offer_v2 = Offer(
+            source="OLX",
+            external_id="3",
+            title="Nintendo switch v2",
+            price=1000,
+            description="Brak opisu",
+        )
+        self.assertFalse(scraper.filter_offer(offer_v2, q1))
+
+        offer_oled = Offer(
+            source="OLX",
+            external_id="4",
+            title="Nintendo Switch OLED 64 GB + 4 Joy-Cony + 2 gry + dodatki",
+            price=1050,
+            description="Brak opisu",
+        )
+        self.assertFalse(scraper.filter_offer(offer_oled, q1))
+
+        offer_just_switch = Offer(
+            source="OLX",
+            external_id="5",
+            title="Nintendo Switch",
+            price=700,
+            description="Brak opisu",
+        )
+        self.assertFalse(scraper.filter_offer(offer_just_switch, q1))
 
     def test_aggregator_search_and_db_persistence(self):
         res = self.aggregator.search_all(

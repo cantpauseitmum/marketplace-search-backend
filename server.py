@@ -147,7 +147,7 @@ class MarketplaceAPIHandler(SimpleHTTPRequestHandler):
         except ValueError:
             radius = 0
 
-        in_desc_raw = params.get("in_description", ["true"])[0].lower()
+        in_desc_raw = params.get("in_description", ["false"])[0].lower()
         search_in_desc = in_desc_raw in ("true", "1", "yes")
 
         min_price = None
