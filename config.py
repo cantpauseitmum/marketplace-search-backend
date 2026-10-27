@@ -4,6 +4,32 @@ Zawiera nagłówki przeglądarek, mapowania lokalizacji oraz parametry scraperó
 """
 import os
 
+# Bezpieczne ładowanie zmiennych z pliku .env (jeśli istnieje lokalnie)
+def _load_env_file():
+    candidates = [
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"),
+        os.path.join(os.path.dirname(__file__), ".env"),
+        ".env",
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#") or "=" not in line:
+                            continue
+                        k, v = line.split("=", 1)
+                        k = k.strip()
+                        v = v.strip().strip("'\"")
+                        if k and k not in os.environ:
+                            os.environ[k] = v
+                break
+            except Exception:
+                pass
+
+_load_env_file()
+
 PORT = int(os.environ.get("PORT", 8000))
 HOST = os.environ.get("HOST", "0.0.0.0")
 DEBUG = os.environ.get("DEBUG", "true").lower() == "true"
@@ -11,15 +37,12 @@ DEBUG = os.environ.get("DEBUG", "true").lower() == "true"
 # Baza danych
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.dirname(__file__)), "database", "marketplace.db"))
 
-# Klucze API (opcjonalne - dla oficjalnego API Allegro)
+# Klucze API (dla oficjalnego API Allegro - odczytywane z .env / zmiennych środowiskowych)
 ALLEGRO_CLIENT_ID = os.environ.get("ALLEGRO_CLIENT_ID", "")
 ALLEGRO_CLIENT_SECRET = os.environ.get("ALLEGRO_CLIENT_SECRET", "")
 
 # Ciasteczka sesyjne FB Marketplace (opcjonalne)
 FACEBOOK_COOKIE = os.environ.get("FACEBOOK_COOKIE", "")
-
-# Tryb symulacji / fallbacku (domyślnie wyłączony, aby nigdy nie generować nieistniejących linków)
-ENABLE_MOCK_FALLBACK = os.environ.get("ENABLE_MOCK_FALLBACK", "false").lower() == "true"
 
 # Timeout dla zapytań HTTP do marketplace'ów w sekundach
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", 8))

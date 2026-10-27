@@ -56,6 +56,8 @@ class MarketplaceAggregator:
         max_price: Optional[float] = None,
         sources: Optional[List[str]] = None,
         sort_by: str = "newest",  # 'newest', 'price_asc', 'price_desc', 'relevance'
+        page: int = 1,
+        raw_location: str = "",
     ) -> Dict[str, Any]:
         """
         Współbieżnie przeszukuje wszystkie wybrane serwisy i łączy wyniki.
@@ -78,6 +80,8 @@ class MarketplaceAggregator:
             min_price=min_price,
             max_price=max_price,
             sources=[s.name for s in target_scrapers],
+            page=page,
+            raw_location=raw_location,
         )
 
         # Rejestracja wyszukiwania w bazie danych
@@ -170,6 +174,8 @@ class MarketplaceAggregator:
             "query": query_text,
             "location": location,
             "radius_km": radius_km,
+            "page": page,
+            "has_more": len(unique_offers) > 0,
             "total_count": len(unique_offers),
             "stats_by_source": stats_by_source,
             "scraper_statuses": scraper_results,

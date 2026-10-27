@@ -140,12 +140,28 @@ class MarketplaceAPIHandler(SimpleHTTPRequestHandler):
             self._send_json({"error": "Parametr 'q' (fraza wyszukiwania) jest wymagany"}, status=400)
             return
 
-        location = params.get("location", [""])[0].strip()
-        radius_raw = params.get("radius", ["0"])[0]
-        try:
-            radius = int(radius_raw)
-        except ValueError:
+        location_raw = params.get("location", [""])[0].strip()
+        radius_raw = params.get("radius", ["all"])[0].strip().lower()
+
+        # Logika obszaru:
+        # Wpisanie miasta daje punkt startowy, a obok wybierany jest obszar (+0km, +5km, Cała Polska).
+        # Jeśli wybrano 'all' (Cała Polska) lub pole miasta jest puste -> szukamy w całej Polsce (Poznań + Cała Polska = Cała Polska)
+        if radius_raw in ("all", "polska", "cala_polska", "-1", "none") or not location_raw:
+            location = ""
             radius = 0
+        else:
+            location = location_raw
+            try:
+                radius = int(radius_raw)
+            except ValueError:
+                radius = 0
+
+        # Paginacja
+        page_raw = params.get("page", ["1"])[0]
+        try:
+            page = max(1, int(page_raw))
+        except ValueError:
+            page = 1
 
         in_desc_raw = params.get("in_description", ["false"])[0].lower()
         search_in_desc = in_desc_raw in ("true", "1", "yes")
@@ -178,6 +194,8 @@ class MarketplaceAPIHandler(SimpleHTTPRequestHandler):
                 max_price=max_price,
                 sources=sources,
                 sort_by=sort_by,
+                page=page,
+                raw_location=location_raw,
             )
             self._send_json(results)
         except Exception as e:

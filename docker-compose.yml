@@ -8,7 +8,6 @@ services:
       - PORT=8000
       - HOST=0.0.0.0
       - DEBUG=true
-      - ENABLE_MOCK_FALLBACK=true
     volumes:
       - backend_db:/app/database
     restart: unless-stopped

@@ -15,6 +15,8 @@ class Offer:
     price: Optional[float]
     currency: str = "PLN"
     price_formatted: str = ""
+    original_price: Optional[float] = None
+    original_currency: Optional[str] = None
     url: str = ""
     image_url: str = ""
     location: str = ""
@@ -44,12 +46,14 @@ class SearchQuery:
     min_price: Optional[float] = None
     max_price: Optional[float] = None
     sources: List[str] = field(default_factory=lambda: ["OLX", "Allegro", "Allegro Lokalnie", "Facebook Marketplace"])
+    page: int = 1
+    raw_location: str = ""
 
 
 @dataclass
 class ScraperResult:
     source: str
-    status: str  # 'OK', 'ERROR', 'WARNING', 'FALLBACK'
+    status: str  # 'OK', 'ERROR', 'WARNING'
     items: List[Offer] = field(default_factory=list)
     latency_ms: int = 0
     message: str = ""

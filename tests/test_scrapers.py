@@ -58,7 +58,8 @@ class TestMarketplaceSearch(unittest.TestCase):
         allok = AllegroLokalnieScraper()
         allok_url = allok.build_url(query)
         self.assertIn("allegrolokalnie.pl", allok_url)
-        self.assertIn("city=Warszawa", allok_url)
+        self.assertIn("warszawa", allok_url.lower())
+        self.assertIn("distance=25", allok_url)
 
         allegro = AllegroScraper()
         allegro_url = allegro.build_url(query)
@@ -141,6 +142,66 @@ class TestMarketplaceSearch(unittest.TestCase):
         is_bookmarked = self.db.toggle_bookmark(first_id)
         self.assertTrue(is_bookmarked)
 
+    def test_location_and_pagination(self):
+        # 1. Cała Polska: OLX, Allegro Lokalnie, FB i Allegro nie powinny zawierać ograniczenia miastem
+        q_polska = SearchQuery(text="switch 2", location="", radius_km=0, search_in_description=True, page=2)
+        olx = OLXScraper()
+        allok = AllegroLokalnieScraper()
+        allegro = AllegroScraper()
+        fb = FacebookMarketplaceScraper()
+
+        olx_url = olx.build_url(q_polska)
+        self.assertIn("/d/oferty/q-switch-2/", olx_url)
+        self.assertIn("search[description]=1", olx_url)
+        self.assertIn("page=2", olx_url)
+
+        allok_url = allok.build_url(q_polska)
+        self.assertIn("/oferty/q/switch-2", allok_url)
+        self.assertIn("page=2", allok_url)
+
+        allegro_url = allegro.build_url(q_polska)
+        self.assertIn("p=2", allegro_url)
+        self.assertNotIn("city=", allegro_url)
+
+        fb_url = fb.build_url(q_polska)
+        self.assertIn("/marketplace/warsaw/search/?query=switch%202", fb_url)
+
+        # 2. Wrocław + 100km
+        q_wroclaw = SearchQuery(text="switch 2", location="Wrocław", radius_km=100)
+        olx_wroc = olx.build_url(q_wroclaw)
+        self.assertIn("/wroclaw/", olx_wroc)
+        self.assertIn("search[dist]=100", olx_wroc)
+
+        allok_wroc = allok.build_url(q_wroclaw)
+        self.assertIn("/oferty/wroclaw/q/switch-2", allok_wroc)
+        self.assertIn("distance=100", allok_wroc)
+
+        fb_wroc = fb.build_url(q_wroclaw)
+        self.assertIn("/marketplace/wroclaw/search/", fb_wroc)
+        self.assertIn("radius=100", fb_wroc)
+
+    def test_currency_conversion_and_cross_border(self):
+        from backend.currency import currency_converter
+
+        # 1. Przeliczanie EUR -> PLN
+        pln_val, fmt, orig_p, orig_c = currency_converter.format_price(80.0, "EUR")
+        self.assertGreater(pln_val, 300)
+        self.assertIn("zł", fmt)
+        self.assertIn("80 €", fmt)
+        self.assertEqual(orig_c, "EUR")
+
+        # 2. Przeliczanie USD -> PLN
+        pln_usd, fmt_usd, orig_p_u, orig_c_u = currency_converter.format_price(100.0, "USD")
+        self.assertGreater(pln_usd, 350)
+        self.assertIn("100 $", fmt_usd)
+
+        # 3. Słubice -> Frankfurt URL anchor
+        fb = FacebookMarketplaceScraper()
+        q_slubice = SearchQuery(text="rower", location="Słubice", raw_location="Słubice")
+        slubice_url = fb.build_url(q_slubice)
+        self.assertIn("/marketplace/frankfurt/search/", slubice_url)
+
 
 if __name__ == "__main__":
     unittest.main()
+

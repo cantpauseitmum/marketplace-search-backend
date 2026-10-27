@@ -16,11 +16,10 @@ except ImportError:
     HAS_CURL_CFFI = False
 
 from .base import BaseScraper, Offer, SearchQuery, ScraperResult
-from .mock_data import generate_mock_offers
 try:
-    from config import DEFAULT_HEADERS, REQUEST_TIMEOUT, ENABLE_MOCK_FALLBACK
+    from config import DEFAULT_HEADERS, REQUEST_TIMEOUT, slugify_city
 except (ImportError, ValueError):
-    from backend.config import DEFAULT_HEADERS, REQUEST_TIMEOUT, ENABLE_MOCK_FALLBACK
+    from backend.config import DEFAULT_HEADERS, REQUEST_TIMEOUT, slugify_city
 
 
 class AllegroLokalnieScraper(BaseScraper):
@@ -31,14 +30,19 @@ class AllegroLokalnieScraper(BaseScraper):
     website_url = "https://allegrolokalnie.pl"
 
     def build_url(self, query: SearchQuery) -> str:
-        query_encoded = urllib.parse.quote(query.text.strip())
-        base = f"https://allegrolokalnie.pl/oferty/q/{query_encoded}"
+        query_encoded = urllib.parse.quote(query.text.strip().replace(" ", "-"))
+        city_slug = slugify_city(query.location) if query.location else ""
+
+        if city_slug:
+            base = f"https://allegrolokalnie.pl/oferty/{city_slug}/q/{query_encoded}"
+        else:
+            base = f"https://allegrolokalnie.pl/oferty/q/{query_encoded}"
 
         params = []
-        if query.location:
-            params.append(f"city={urllib.parse.quote(query.location.strip())}")
-            if query.radius_km > 0:
-                params.append(f"distance={query.radius_km}")
+        if city_slug and query.radius_km > 0:
+            params.append(f"distance={query.radius_km}")
+        if query.page > 1:
+            params.append(f"page={query.page}")
         if query.min_price is not None:
             params.append(f"price_from={int(query.min_price)}")
         if query.max_price is not None:
@@ -85,15 +89,6 @@ class AllegroLokalnieScraper(BaseScraper):
                     message=f"Pobrano {len(offers)} rzeczywistych ofert z Allegro Lokalnie",
                 )
             else:
-                if ENABLE_MOCK_FALLBACK:
-                    mock_items = generate_mock_offers(self.name, query, count=5)
-                    return ScraperResult(
-                        source=self.name,
-                        status="FALLBACK",
-                        items=mock_items,
-                        latency_ms=latency_ms,
-                        message="Brak bezpośrednich ofert na Allegro Lokalnie, tryb demonstracyjny",
-                    )
                 return ScraperResult(
                     source=self.name,
                     status="OK",
@@ -104,15 +99,6 @@ class AllegroLokalnieScraper(BaseScraper):
 
         except Exception as e:
             latency_ms = int((time.time() - start_time) * 1000)
-            if ENABLE_MOCK_FALLBACK:
-                mock_items = generate_mock_offers(self.name, query, count=5)
-                return ScraperResult(
-                    source=self.name,
-                    status="FALLBACK",
-                    items=mock_items,
-                    latency_ms=latency_ms,
-                    message=f"Allegro Lokalnie ({str(e)[:50]})",
-                )
             return ScraperResult(
                 source=self.name,
                 status="ERROR",
@@ -120,6 +106,7 @@ class AllegroLokalnieScraper(BaseScraper):
                 latency_ms=latency_ms,
                 message=f"Błąd Allegro Lokalnie: {str(e)}",
             )
+
 
     def _parse_html(self, html_content: str, query: SearchQuery) -> List[Offer]:
         offers: List[Offer] = []

@@ -1,19 +1,42 @@
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+*.env
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
 
-# SQLite database files
+# SQLite database files & journals
 *.db
 *.db-journal
 *.db-wal
 *.db-shm
+*.sqlite
+*.sqlite3
 
-# Environment & IDE
-.env
+# Virtual environments
 .venv/
 env/
 venv/
+ENV/
+
+# Operating System files
 .DS_Store
+.DS_Store?
+._*
+
+# Editor & IDE settings
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
+
+# Test & coverage
+.coverage
+htmlcov/
+.pytest_cache/
+*.log

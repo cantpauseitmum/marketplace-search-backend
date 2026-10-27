@@ -17,11 +17,10 @@ except ImportError:
     HAS_CURL_CFFI = False
 
 from .base import BaseScraper, Offer, SearchQuery, ScraperResult
-from .mock_data import generate_mock_offers
 try:
-    from config import DEFAULT_HEADERS, REQUEST_TIMEOUT, ENABLE_MOCK_FALLBACK, slugify_city
+    from config import DEFAULT_HEADERS, REQUEST_TIMEOUT, slugify_city
 except (ImportError, ValueError):
-    from backend.config import DEFAULT_HEADERS, REQUEST_TIMEOUT, ENABLE_MOCK_FALLBACK, slugify_city
+    from backend.config import DEFAULT_HEADERS, REQUEST_TIMEOUT, slugify_city
 
 
 class OLXScraper(BaseScraper):
@@ -44,6 +43,10 @@ class OLXScraper(BaseScraper):
         params = []
         if query.radius_km > 0 and city_slug:
             params.append(f"search[dist]={query.radius_km}")
+        if query.search_in_description:
+            params.append("search[description]=1")
+        if query.page > 1:
+            params.append(f"page={query.page}")
         if query.min_price is not None:
             params.append(f"search[filter_float_price:from]={int(query.min_price)}")
         if query.max_price is not None:
@@ -90,18 +93,7 @@ class OLXScraper(BaseScraper):
                 status="OK",
                 items=filtered,
                 latency_ms=latency_ms,
-                message=f"Pobrano {len(filtered)} rzeczywistych ofert z OLX.pl",
-            )
-
-        # Jeśli brak ofert
-        if ENABLE_MOCK_FALLBACK:
-            mock_items = generate_mock_offers(self.name, query, count=5)
-            return ScraperResult(
-                source=self.name,
-                status="FALLBACK",
-                items=mock_items,
-                latency_ms=latency_ms,
-                message="Brak bezpośrednich ofert na OLX (tryb demonstracyjny)",
+                message=f"Pobrano {len(filtered)} rzeczywistych ofert z OLX.pl (strona {query.page})",
             )
 
         return ScraperResult(
@@ -115,11 +107,11 @@ class OLXScraper(BaseScraper):
     def _search_via_api(self, query: SearchQuery) -> List[Offer]:
         offers: List[Offer] = []
         query_enc = urllib.parse.quote(query.text.strip())
-        url = f"https://www.olx.pl/api/v1/offers/?query={query_enc}&offset=0&limit=50"
-        if query.min_price is not None:
-            url += f"&filter_float_price:from={int(query.min_price)}"
-        if query.max_price is not None:
-            url += f"&filter_float_price:to={int(query.max_price)}"
+
+        # Obliczanie offsetów: dla page=1 pobieramy offset 0 i 50 (pierwsze 100 ogłoszeń),
+        # dla page=2 pobieramy 100 i 150, itd.
+        base_offset = (query.page - 1) * 100
+        offsets = [base_offset, base_offset + 50]
 
         headers = {
             "Referer": "https://www.olx.pl/",
@@ -127,25 +119,34 @@ class OLXScraper(BaseScraper):
             "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8",
         }
 
-        try:
-            if HAS_CURL_CFFI:
-                resp = cffi_requests.get(url, impersonate="chrome", headers=headers, timeout=REQUEST_TIMEOUT)
-                if resp.status_code == 200:
-                    data = resp.json().get("data", [])
-                    for item in data:
-                        offer = self._parse_api_item(item, query)
-                        if offer:
-                            offers.append(offer)
-            else:
-                req = urllib.request.Request(url, headers={**DEFAULT_HEADERS, **headers})
-                with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as r:
-                    data = json.loads(r.read().decode()).get("data", [])
-                    for item in data:
-                        offer = self._parse_api_item(item, query)
-                        if offer:
-                            offers.append(offer)
-        except Exception:
-            pass
+        for offset in offsets:
+            url = f"https://www.olx.pl/api/v1/offers/?query={query_enc}&offset={offset}&limit=50"
+            if query.search_in_description:
+                url += "&search[description]=1"
+            if query.min_price is not None:
+                url += f"&filter_float_price:from={int(query.min_price)}"
+            if query.max_price is not None:
+                url += f"&filter_float_price:to={int(query.max_price)}"
+
+            try:
+                if HAS_CURL_CFFI:
+                    resp = cffi_requests.get(url, impersonate="chrome", headers=headers, timeout=REQUEST_TIMEOUT)
+                    if resp.status_code == 200:
+                        data = resp.json().get("data", [])
+                        for item in data:
+                            offer = self._parse_api_item(item, query)
+                            if offer:
+                                offers.append(offer)
+                else:
+                    req = urllib.request.Request(url, headers={**DEFAULT_HEADERS, **headers})
+                    with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as r:
+                        data = json.loads(r.read().decode()).get("data", [])
+                        for item in data:
+                            offer = self._parse_api_item(item, query)
+                            if offer:
+                                offers.append(offer)
+            except Exception:
+                pass
 
         return offers
 

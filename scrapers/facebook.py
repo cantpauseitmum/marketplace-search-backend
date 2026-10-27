@@ -16,11 +16,98 @@ except ImportError:
     HAS_CURL_CFFI = False
 
 from .base import BaseScraper, Offer, SearchQuery, ScraperResult
-from .mock_data import generate_mock_offers
 try:
-    from config import DEFAULT_HEADERS, REQUEST_TIMEOUT, ENABLE_MOCK_FALLBACK, FACEBOOK_COOKIE, slugify_city
+    from config import DEFAULT_HEADERS, REQUEST_TIMEOUT, FACEBOOK_COOKIE, slugify_city
 except (ImportError, ValueError):
-    from backend.config import DEFAULT_HEADERS, REQUEST_TIMEOUT, ENABLE_MOCK_FALLBACK, FACEBOOK_COOKIE, slugify_city
+    from backend.config import DEFAULT_HEADERS, REQUEST_TIMEOUT, FACEBOOK_COOKIE, slugify_city
+
+try:
+    from currency import currency_converter
+except (ImportError, ValueError):
+    from backend.currency import currency_converter
+
+
+FB_CITY_SLUGS = {
+    # Huby bezpośrednio wspierane przez FB Marketplace w Polsce
+    "warszawa": "warsaw",
+    "warsaw": "warsaw",
+    "krakow": "krakow",
+    "kraków": "krakow",
+    "poznan": "poznan",
+    "poznań": "poznan",
+    "lodz": "lodz",
+    "łódź": "lodz",
+    "lublin": "lublin",
+
+    # Regiony przygraniczne (np. Słubice <-> Frankfurt nad Odrą, Zgorzelec, Cieszyn)
+    "slubice": "frankfurt",
+    "słubice": "frankfurt",
+    "frankfurt": "frankfurt",
+    "kostrzyn": "frankfurt",
+    "gorzow": "frankfurt",
+    "gorzów": "frankfurt",
+    "zgorzelec": "dresden",
+    "szczecin": "berlin",
+    "swinoujscie": "berlin",
+    "świnoujście": "berlin",
+    "berlin": "berlin",
+    "cieszyn": "prague",
+    "prague": "prague",
+    "praha": "prague",
+
+    # Śląsk i Małopolska -> krakow
+    "katowice": "krakow",
+    "gliwice": "krakow",
+    "sosnowiec": "krakow",
+    "zabrze": "krakow",
+    "bytom": "krakow",
+    "bielsko": "krakow",
+    "bielsko-biala": "krakow",
+    "bielsko-biała": "krakow",
+    "rybnik": "krakow",
+    "tychy": "krakow",
+    "czestochowa": "krakow",
+    "częstochowa": "krakow",
+    "rzeszow": "krakow",
+    "rzeszów": "krakow",
+    "tarnow": "krakow",
+    "tarnów": "krakow",
+
+    # Dolny Śląsk i Wielkopolska -> wroclaw / poznan
+    "wroclaw": "wroclaw",
+    "wrocław": "wroclaw",
+    "legnica": "poznan",
+    "opole": "poznan",
+    "walbrzych": "poznan",
+    "wałbrzych": "poznan",
+    "zielona gora": "poznan",
+    "zielonagora": "poznan",
+    "zielona góra": "poznan",
+    "kalisz": "poznan",
+    "leszno": "poznan",
+    "pila": "poznan",
+    "piła": "poznan",
+
+    # Pomorze i Północ -> warsaw
+    "gdansk": "warsaw",
+    "gdańsk": "warsaw",
+    "gdynia": "warsaw",
+    "sopot": "warsaw",
+    "trojmiasto": "warsaw",
+    "trójmiasto": "warsaw",
+    "bydgoszcz": "warsaw",
+    "torun": "warsaw",
+    "toruń": "warsaw",
+    "olsztyn": "warsaw",
+    "elblag": "warsaw",
+    "elbląg": "warsaw",
+    "bialystok": "warsaw",
+    "białystok": "warsaw",
+    "kielce": "warsaw",
+    "radom": "warsaw",
+    "plock": "warsaw",
+    "płock": "warsaw",
+}
 
 
 class FacebookMarketplaceScraper(BaseScraper):
@@ -30,16 +117,44 @@ class FacebookMarketplaceScraper(BaseScraper):
     badge_color = "#ffffff"
     website_url = "https://www.facebook.com/marketplace"
 
+    def get_city_slug(self, query: SearchQuery) -> str:
+        # 1. Sprawdź czy podano lokalizację
+        loc = (query.location or "").strip().lower()
+        # 2. Jeśli wybrano 'Cała Polska', użyj punktu startowego wpisanego przez użytkownika (np. Poznań, Słubice)
+        if not loc:
+            loc = (query.raw_location or "").strip().lower()
+        # 3. Jeśli użytkownik nie podał żadnego miasta, użyj Warszawy jako centralnego polskiego punktu
+        if not loc:
+            loc = "warsaw"
+
+        # Bezpośrednie lub częściowe dopasowanie do znanych hubów regionalnych
+        loc_clean = re.sub(r"[^\w\s-]", "", loc).strip()
+        if loc_clean in FB_CITY_SLUGS:
+            return FB_CITY_SLUGS[loc_clean]
+
+        for k, v in FB_CITY_SLUGS.items():
+            if k in loc_clean:
+                return v
+
+        # Zabezpieczenie: jeśli slug nie jest wspierany bezpośrednio przez FB, użyj najbliższego hubu (domyślnie 'warsaw')
+        # Zapobiega to przekierowaniu przez FB na /category/search/ (które domyślnie ląduje w Kalifornii)
+        VALID_HUBS = {"warsaw", "poznan", "krakow", "lodz", "lublin", "frankfurt", "berlin", "prague"}
+        slug = slugify_city(loc_clean)
+        if slug in VALID_HUBS:
+            return slug
+        return "warsaw"
+
     def build_url(self, query: SearchQuery) -> str:
         query_encoded = urllib.parse.quote(query.text.strip())
-        city_slug = slugify_city(query.location) if query.location else ""
-
-        if city_slug:
-            base = f"https://www.facebook.com/marketplace/{city_slug}/search/?query={query_encoded}"
-        else:
-            base = f"https://www.facebook.com/marketplace/search/?query={query_encoded}"
+        city_slug = self.get_city_slug(query)
+        base = f"https://www.facebook.com/marketplace/{city_slug}/search/?query={query_encoded}"
 
         params = []
+        if query.radius_km == 0 and query.location:
+            params.append("exact=true")
+        elif query.radius_km > 0:
+            params.append(f"radius={query.radius_km}")
+
         if query.min_price is not None:
             params.append(f"minPrice={int(query.min_price)}")
         if query.max_price is not None:
@@ -90,15 +205,6 @@ class FacebookMarketplaceScraper(BaseScraper):
                     message=f"Pobrano {len(offers)} rzeczywistych ofert z FB Marketplace",
                 )
             else:
-                if ENABLE_MOCK_FALLBACK:
-                    mock_items = generate_mock_offers(self.name, query, count=5)
-                    return ScraperResult(
-                        source=self.name,
-                        status="FALLBACK",
-                        items=mock_items,
-                        latency_ms=latency_ms,
-                        message="Brak bezpośrednich ofert na Facebook Marketplace (tryb demonstracyjny)",
-                    )
                 return ScraperResult(
                     source=self.name,
                     status="OK",
@@ -109,15 +215,6 @@ class FacebookMarketplaceScraper(BaseScraper):
 
         except Exception as e:
             latency_ms = int((time.time() - start_time) * 1000)
-            if ENABLE_MOCK_FALLBACK:
-                mock_items = generate_mock_offers(self.name, query, count=5)
-                return ScraperResult(
-                    source=self.name,
-                    status="FALLBACK",
-                    items=mock_items,
-                    latency_ms=latency_ms,
-                    message=f"FB Marketplace ({str(e)[:45]})",
-                )
             return ScraperResult(
                 source=self.name,
                 status="ERROR",
@@ -125,6 +222,7 @@ class FacebookMarketplaceScraper(BaseScraper):
                 latency_ms=latency_ms,
                 message=f"Błąd FB Marketplace: {str(e)}",
             )
+
 
     def _parse_html(self, html_content: str, query: SearchQuery) -> List[Offer]:
         offers: List[Offer] = []
@@ -203,43 +301,75 @@ class FacebookMarketplaceScraper(BaseScraper):
             if not title:
                 return None
 
+            # Waluta i cena (obsługuje PLN oraz waluty obce np. EUR, USD, CZK, GBP)
             price_data = node.get("listing_price", {})
-            price_formatted = price_data.get("formatted_amount", "").replace("\xa0", " ")
-            price_val = None
-            if "amount" in price_data and price_data["amount"]:
+            raw_fmt = price_data.get("formatted_amount", "").replace("\xa0", " ")
+            currency = currency_converter.detect_currency(raw_fmt)
+
+            raw_amount = None
+            if "amount" in price_data and price_data["amount"] is not None:
                 try:
-                    price_val = float(price_data["amount"])
+                    raw_amount = float(price_data["amount"])
                 except (ValueError, TypeError):
                     pass
+
+            # Przeliczenie walut obcych na PLN z zachowaniem oryginalnej ceny i waluty
+            price_pln, price_formatted, orig_price, orig_curr = currency_converter.format_price(
+                raw_amount, currency, original_formatted=raw_fmt
+            )
+
+            # Informacje o lokalizacji (nie ukrywamy ofert zagranicznych ani przygranicznych, np. Frankfurt, Görlitz)
+            loc_obj = node.get("location", {})
+            city = ""
+            state = ""
+            display_name = ""
+            if isinstance(loc_obj, dict):
+                rev = loc_obj.get("reverse_geocode", {})
+                if isinstance(rev, dict):
+                    city = rev.get("city") or ""
+                    state = rev.get("state") or ""
+            # Odrzucenie serwerowego fallbacku Meta z USA (gdy FB przekieruje zapytanie na /category/search/)
+            # Wyniki europejskie (Polska, Niemcy/Frankfurt/Görlitz, Czechy, Słowacja itd.) są zachowywane i przeliczane na PLN
+            us_states = {
+                "CA", "TX", "NY", "FL", "IL", "PA", "OH", "GA", "NC", "MI",
+                "NJ", "VA", "WA", "AZ", "MA", "TN", "IN", "MO", "MD", "WI",
+                "CO", "MN", "SC", "AL", "LA", "KY", "OR", "OK", "CT", "UT",
+                "IA", "NV", "AR", "MS", "KS", "NM", "NE", "WV", "ID", "HI"
+            }
+            if state.upper() in us_states or "california" in display_name.lower() or "united states" in display_name.lower():
+                return None
+
+            if display_name:
+                location_str = display_name
+            elif city and state:
+                location_str = f"{city}, {state}"
+            elif city:
+                location_str = city
+            else:
+                location_str = query.location or query.raw_location or "Polska"
 
             photo_obj = node.get("primary_listing_photo", {})
             image_url = ""
             if isinstance(photo_obj, dict):
                 image_url = photo_obj.get("image", {}).get("uri", "")
 
-            loc_obj = node.get("location", {})
-            city = ""
-            if isinstance(loc_obj, dict):
-                rev = loc_obj.get("reverse_geocode", {})
-                if isinstance(rev, dict):
-                    city = rev.get("city") or rev.get("city_page", {}).get("display_name", "")
-
-            location_str = city or query.location or "Polska"
-
             return Offer(
                 source=self.name,
                 external_id=f"fb-{item_id}",
                 title=title,
-                price=price_val,
+                price=price_pln,
                 currency="PLN",
-                price_formatted=price_formatted or (f"{price_val:.0f} zł" if price_val else "Zobacz na FB"),
+                price_formatted=price_formatted,
+                original_price=orig_price,
+                original_currency=orig_curr,
                 url=f"https://www.facebook.com/marketplace/item/{item_id}/",
                 image_url=image_url,
                 location=location_str,
-                city=city,
+                city=city or location_str,
                 description="",
                 published_at="Niedawno",
             )
         except Exception:
             return None
+
 
