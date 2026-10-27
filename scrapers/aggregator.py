@@ -163,11 +163,15 @@ class MarketplaceAggregator:
         if watched_search_id:
             for od in offers_dicts:
                 od["watched_search_id"] = watched_search_id
+            self.db.sync_watched_offers(
+                watched_id=watched_search_id,
+                current_offers=offers_dicts,
+                query_id=query_id,
+            )
+        else:
+            self.db.upsert_offers_batch(offers_dicts, query_id=query_id)
 
-        self.db.upsert_offers_batch(offers_dicts, query_id=query_id, watched_search_id=watched_search_id)
         self.db.update_query_result_count(query_id, len(unique_offers))
-        if watched_search_id:
-            self.db.update_watched_search_result(watched_search_id, len(unique_offers))
 
         total_time_ms = int((time.time() - start_overall) * 1000)
 

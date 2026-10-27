@@ -242,6 +242,57 @@ class DatabaseManager:
                 print(f"[DB] Błąd zapisu oferty '{offer.get('title')}': {e}")
         return inserted_or_updated
 
+    def sync_watched_offers(
+        self,
+        watched_id: int,
+        current_offers: List[Dict[str, Any]],
+        query_id: Optional[int] = None,
+    ) -> int:
+        """
+        Synchronizuje oferty dla danego monitorowanego zapytania:
+        1. Zapisuje / aktualizuje najnowsze znalezione oferty.
+        2. Usuwa oferty, które przestały być aktualne (zniknęły z serwisów),
+           jednocześnie chroniąc polubione oferty (is_bookmarked = 1) poprzez odpięcie ich do ulubionych.
+        """
+        # 1. Zapisz/zaaktualizuj bieżące oferty
+        self.upsert_offers_batch(current_offers, query_id=query_id, watched_search_id=watched_id)
+
+        # Zbierz unikalne klucze (source, url) aktualnie znalezionych ofert
+        active_keys = set()
+        for o in current_offers:
+            src = o.get("source")
+            url = o.get("url")
+            if src and url:
+                active_keys.add((src, url))
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, source, url, is_bookmarked FROM offers WHERE watched_search_id = ?",
+                (watched_id,),
+            )
+            existing = cursor.fetchall()
+
+            for row in existing:
+                offer_id = row["id"]
+                src = row["source"]
+                url = row["url"]
+                is_bm = row["is_bookmarked"]
+
+                if (src, url) not in active_keys:
+                    if is_bm:
+                        # Polubiona oferta: zachowaj w bazie w 'Zapisane', odepnij od monitorowanego zapytania
+                        conn.execute(
+                            "UPDATE offers SET watched_search_id = NULL WHERE id = ?",
+                            (offer_id,),
+                        )
+                    else:
+                        # Wygasła i niepolubiona: usuń z bazy
+                        conn.execute("DELETE FROM offers WHERE id = ?", (offer_id,))
+
+        self.update_watched_search_result(watched_id, len(current_offers))
+        return len(current_offers)
+
     def get_offers(
         self,
         query: Optional[str] = None,
