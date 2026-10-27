@@ -58,6 +58,7 @@ class MarketplaceAggregator:
         sort_by: str = "newest",  # 'newest', 'price_asc', 'price_desc', 'relevance'
         page: int = 1,
         raw_location: str = "",
+        watched_search_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Współbieżnie przeszukuje wszystkie wybrane serwisy i łączy wyniki.
@@ -159,8 +160,14 @@ class MarketplaceAggregator:
 
         # Zapis do bazy danych
         offers_dicts = [o.to_dict() for o in unique_offers]
-        self.db.upsert_offers_batch(offers_dicts, query_id=query_id)
+        if watched_search_id:
+            for od in offers_dicts:
+                od["watched_search_id"] = watched_search_id
+
+        self.db.upsert_offers_batch(offers_dicts, query_id=query_id, watched_search_id=watched_search_id)
         self.db.update_query_result_count(query_id, len(unique_offers))
+        if watched_search_id:
+            self.db.update_watched_search_result(watched_search_id, len(unique_offers))
 
         total_time_ms = int((time.time() - start_overall) * 1000)
 
