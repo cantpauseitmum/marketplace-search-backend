@@ -37,10 +37,6 @@ DEBUG = os.environ.get("DEBUG", "true").lower() == "true"
 # Baza danych
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.dirname(__file__)), "database", "marketplace.db"))
 
-# Klucze API (dla oficjalnego API Allegro - odczytywane z .env / zmiennych środowiskowych)
-ALLEGRO_CLIENT_ID = os.environ.get("ALLEGRO_CLIENT_ID", "")
-ALLEGRO_CLIENT_SECRET = os.environ.get("ALLEGRO_CLIENT_SECRET", "")
-
 # Ciasteczka sesyjne FB Marketplace (opcjonalne)
 FACEBOOK_COOKIE = os.environ.get("FACEBOOK_COOKIE", "")
 

@@ -9,7 +9,7 @@ import re
 
 @dataclass
 class Offer:
-    source: str  # 'OLX', 'Allegro', 'Allegro Lokalnie', 'Facebook Marketplace'
+    source: str  # 'OLX', 'Allegro Lokalnie', 'Facebook Marketplace'
     external_id: str
     title: str
     price: Optional[float]
@@ -45,7 +45,7 @@ class SearchQuery:
     search_in_description: bool = True
     min_price: Optional[float] = None
     max_price: Optional[float] = None
-    sources: List[str] = field(default_factory=lambda: ["OLX", "Allegro", "Allegro Lokalnie", "Facebook Marketplace"])
+    sources: List[str] = field(default_factory=lambda: ["OLX", "Allegro Lokalnie", "Facebook Marketplace"])
     page: int = 1
     raw_location: str = ""
 

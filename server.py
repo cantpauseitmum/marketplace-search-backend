@@ -441,7 +441,7 @@ def run_server():
     print(f"👉 Adres aplikacji:  http://localhost:{PORT}")
     print(f"👉 API wyszukiwania: http://localhost:{PORT}/api/search?q=konsola")
     print(f"👉 API Watchlist:    http://localhost:{PORT}/api/watchlist")
-    print(f"👉 Źródła:          OLX, Allegro, Allegro Lokalnie, FB Marketplace")
+    print(f"👉 Źródła:          OLX, Allegro Lokalnie, FB Marketplace")
     print("=" * 65)
     try:
         httpd.serve_forever()

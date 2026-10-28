@@ -123,7 +123,7 @@ class WatchlistScheduler:
             radius = item.get("radius_km", 0)
             sources = item.get("sources")
             if not sources:
-                sources = ["OLX", "Allegro", "Allegro Lokalnie", "Facebook Marketplace"]
+                sources = ["OLX", "Allegro Lokalnie", "Facebook Marketplace"]
 
             results = self.aggregator.search_all(
                 query_text=item.get("query_text", ""),

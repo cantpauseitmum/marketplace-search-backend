@@ -8,7 +8,6 @@ from typing import List, Dict, Any, Optional
 
 from .base import BaseScraper, Offer, SearchQuery, ScraperResult
 from .olx import OLXScraper
-from .allegro import AllegroScraper
 from .allegro_lokalnie import AllegroLokalnieScraper
 from .facebook import FacebookMarketplaceScraper
 import os
@@ -27,7 +26,6 @@ class MarketplaceAggregator:
         self.db = db or DatabaseManager()
         self.scrapers: Dict[str, BaseScraper] = {
             "olx": OLXScraper(),
-            "allegro": AllegroScraper(),
             "allegro_lokalnie": AllegroLokalnieScraper(),
             "facebook": FacebookMarketplaceScraper(),
         }

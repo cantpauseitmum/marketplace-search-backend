@@ -2,11 +2,10 @@
 
 Serwer REST API oraz wielowątkowy silnik scraperów dla aplikacji **MarketplaceSearch**, przeszukujący równolegle:
 - **OLX** (`olx.pl`)
-- **Allegro** (`allegro.pl`)
 - **Allegro Lokalnie** (`allegrolokalnie.pl`)
 - **Facebook Marketplace** (`facebook.com/marketplace`)
 
-Backend został zaprojektowany z myślą o maksymalnej wydajności (odpytywanie współbieżne w `ThreadPoolExecutor`), odporności na blokady botowe (inteligentny fallback) oraz architekturze **Zero-Dependency** (działa na czystym Pythonie 3.10+ bez instalowania zewnętrznych pakietów).
+Backend został zaprojektowany z myślą o maksymalnej wydajności (odpytywanie współbieżne w `ThreadPoolExecutor`) oraz architekturze **Zero-Dependency** (działa na czystym Pythonie 3.10+ bez instalowania zewnętrznych pakietów).
 
 ---
 
@@ -26,10 +25,8 @@ marketplace-search-backend/
 │   ├── base.py            # Klasa bazowa BaseScraper oraz modele Offer, SearchQuery
 │   ├── aggregator.py      # MarketplaceAggregator (współbieżne zapytania wątkowe)
 │   ├── olx.py             # Scraper OLX (JSON __PRERENDERED_STATE__ + parser HTML)
-│   ├── allegro.py         # Scraper Allegro (JSON-LD + oficjalne REST API)
 │   ├── allegro_lokalnie.py# Scraper Allegro Lokalnie (parametry city i distance)
-│   ├── facebook.py        # Scraper FB Marketplace (slugi miast i sesja)
-│   └── mock_data.py       # Inteligentny generator fallback dopasowany do zapytania
+│   └── facebook.py        # Scraper FB Marketplace (slugi miast i sesja)
 │
 ├── database/              # Wbudowana warstwa persystencji SQLite
 │   ├── schema.sql         # Tabele: search_queries, offers, scraper_logs
@@ -75,7 +72,7 @@ Wykonuje równoległe przeszukanie serwisów ogłoszeniowych i zwraca zagregowan
 - `radius` (opcjonalny): Promień w km (`0`, `10`, `25`, `50`, `100`)
 - `in_description` (opcjonalny): `true` / `false` (wyszukiwanie również w treści opisu)
 - `min_price` / `max_price` (opcjonalne): Widełki cenowe w PLN
-- `sources` (opcjonalny): Serwisy rozdzielone przecinkami, np. `olx,allegro,allegro_lokalnie,facebook`
+- `sources` (opcjonalny): Serwisy rozdzielone przecinkami, np. `olx,allegro_lokalnie,facebook`
 - `sort_by` (opcjonalny): `newest`, `price_asc`, `price_desc`, `relevance`
 
 **Przykładowe wywołanie:**
@@ -90,11 +87,10 @@ curl -X GET "http://localhost:8000/api/search?q=Switch+2&location=Warszawa&radiu
   "query": "Switch 2",
   "location": "Warszawa",
   "radius_km": 25,
-  "total_count": 22,
+  "total_count": 16,
   "latency_ms": 380,
   "stats_by_source": {
     "OLX": 6,
-    "Allegro": 6,
     "Allegro Lokalnie": 5,
     "Facebook Marketplace": 5
   },
@@ -127,7 +123,7 @@ Pobiera zapisane oferty z lokalnej bazy danych z opcją filtrowania i paginacji.
 **Parametry:**
 - `q`: Filtrowanie po słowie kluczowym
 - `location`: Filtrowanie po lokalizacji
-- `sources`: Lista źródeł (np. `OLX,Allegro`)
+- `sources`: Lista źródeł (np. `OLX,Allegro Lokalnie`)
 - `min_price` / `max_price`: Zakres cenowy
 - `bookmarked`: `true` (tylko oferty dodane do ulubionych)
 - `limit` (domyślnie 50), `offset` (domyślnie 0)
@@ -172,10 +168,7 @@ Zwraca status działania serwera (`{"status": "healthy"}`).
 | `PORT` | `8000` | Port nasłuchiwania serwera HTTP |
 | `HOST` | `0.0.0.0` | Adres IP interfejsu sieciowego |
 | `DB_PATH` | `./database/marketplace.db` | Ścieżka do bazy danych SQLite |
-| `ENABLE_MOCK_FALLBACK` | `true` | Tryb demonstracyjny / fallback w razie blokady antybotowej |
 | `REQUEST_TIMEOUT` | `8` | Timeout zapytań HTTP do serwisów (w sekundach) |
-| `ALLEGRO_CLIENT_ID` | `""` | Identyfikator aplikacji oficjalnego REST API Allegro (opcjonalny) |
-| `ALLEGRO_CLIENT_SECRET` | `""` | Klucz aplikacji oficjalnego REST API Allegro (opcjonalny) |
 | `FACEBOOK_COOKIE` | `""` | Ciasteczka sesyjne FB Marketplace dla zapytań prywatnych (opcjonalne) |
 
 ---

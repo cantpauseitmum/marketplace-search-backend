@@ -19,10 +19,6 @@ try:
 except ImportError:
     from backend.scrapers.olx import OLXScraper
 try:
-    from scrapers.allegro import AllegroScraper
-except ImportError:
-    from backend.scrapers.allegro import AllegroScraper
-try:
     from scrapers.allegro_lokalnie import AllegroLokalnieScraper
 except ImportError:
     from backend.scrapers.allegro_lokalnie import AllegroLokalnieScraper
@@ -60,10 +56,6 @@ class TestMarketplaceSearch(unittest.TestCase):
         self.assertIn("allegrolokalnie.pl", allok_url)
         self.assertIn("warszawa", allok_url.lower())
         self.assertIn("distance=25", allok_url)
-
-        allegro = AllegroScraper()
-        allegro_url = allegro.build_url(query)
-        self.assertIn("allegro.pl", allegro_url)
 
         fb = FacebookMarketplaceScraper()
         fb_url = fb.build_url(query)
@@ -125,11 +117,10 @@ class TestMarketplaceSearch(unittest.TestCase):
             query_text="Switch 2",
             location="Warszawa",
             radius_km=25,
-            sources=["OLX", "Allegro", "Allegro Lokalnie", "Facebook Marketplace"],
+            sources=["OLX", "Allegro Lokalnie", "Facebook Marketplace"],
         )
         self.assertGreater(res["total_count"], 0)
         self.assertIn("OLX", res["stats_by_source"])
-        self.assertIn("Allegro", res["stats_by_source"])
         self.assertIn("Allegro Lokalnie", res["stats_by_source"])
         self.assertIn("Facebook Marketplace", res["stats_by_source"])
 
@@ -147,7 +138,6 @@ class TestMarketplaceSearch(unittest.TestCase):
         q_polska = SearchQuery(text="switch 2", location="", radius_km=0, search_in_description=True, page=2)
         olx = OLXScraper()
         allok = AllegroLokalnieScraper()
-        allegro = AllegroScraper()
         fb = FacebookMarketplaceScraper()
 
         olx_url = olx.build_url(q_polska)
@@ -158,10 +148,6 @@ class TestMarketplaceSearch(unittest.TestCase):
         allok_url = allok.build_url(q_polska)
         self.assertIn("/oferty/q/switch-2", allok_url)
         self.assertIn("page=2", allok_url)
-
-        allegro_url = allegro.build_url(q_polska)
-        self.assertIn("p=2", allegro_url)
-        self.assertNotIn("city=", allegro_url)
 
         fb_url = fb.build_url(q_polska)
         self.assertIn("/marketplace/warsaw/search/?query=switch%202", fb_url)
