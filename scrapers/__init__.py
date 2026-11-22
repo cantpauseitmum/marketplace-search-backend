@@ -3,6 +3,8 @@ from .base import BaseScraper, Offer, SearchQuery, ScraperResult
 from .olx import OLXScraper
 from .allegro_lokalnie import AllegroLokalnieScraper
 from .facebook import FacebookMarketplaceScraper
+from .vinted import VintedScraper
+from .swapie import SwapieScraper
 from .aggregator import MarketplaceAggregator
 
 __all__ = [
@@ -13,5 +15,7 @@ __all__ = [
     "OLXScraper",
     "AllegroLokalnieScraper",
     "FacebookMarketplaceScraper",
+    "VintedScraper",
+    "SwapieScraper",
     "MarketplaceAggregator",
 ]

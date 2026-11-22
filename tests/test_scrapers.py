@@ -27,6 +27,14 @@ try:
 except ImportError:
     from backend.scrapers.facebook import FacebookMarketplaceScraper
 try:
+    from scrapers.vinted import VintedScraper
+except ImportError:
+    from backend.scrapers.vinted import VintedScraper
+try:
+    from scrapers.swapie import SwapieScraper
+except ImportError:
+    from backend.scrapers.swapie import SwapieScraper
+try:
     from scrapers.aggregator import MarketplaceAggregator
 except ImportError:
     from backend.scrapers.aggregator import MarketplaceAggregator
@@ -60,6 +68,16 @@ class TestMarketplaceSearch(unittest.TestCase):
         fb = FacebookMarketplaceScraper()
         fb_url = fb.build_url(query)
         self.assertIn("facebook.com", fb_url)
+
+        vinted = VintedScraper()
+        vinted_url = vinted.build_url(query)
+        self.assertIn("vinted.pl/catalog", vinted_url)
+        self.assertIn("switch", vinted_url.lower())
+
+        swapie = SwapieScraper()
+        swapie_url = swapie.build_url(query)
+        self.assertIn("swapie.pl/przegladaj", swapie_url)
+        self.assertIn("switch", swapie_url.lower())
 
     def test_offer_filtering(self):
         scraper = OLXScraper()
@@ -186,6 +204,42 @@ class TestMarketplaceSearch(unittest.TestCase):
         q_slubice = SearchQuery(text="rower", location="Słubice", raw_location="Słubice")
         slubice_url = fb.build_url(q_slubice)
         self.assertIn("/marketplace/frankfurt/search/", slubice_url)
+
+
+    def test_sources_and_delivery_protection(self):
+        sources = self.aggregator.get_available_sources()
+        source_names = [s["name"] for s in sources]
+        self.assertIn("OLX", source_names)
+        self.assertIn("Allegro Lokalnie", source_names)
+        self.assertIn("Facebook Marketplace", source_names)
+        self.assertIn("Vinted", source_names)
+        self.assertIn("Swapie", source_names)
+        self.assertEqual(len(source_names), 5)
+
+        # Test wykrywania przesyłki z ochroną w OLX
+        olx = OLXScraper()
+        ad_with_delivery = {
+            "id": 12345,
+            "title": "Konsola Switch",
+            "url": "https://www.olx.pl/d/oferta/test-1",
+            "price": {"regularPrice": {"value": 800}, "displayValue": "800 zł"},
+            "delivery": {"rock": {"active": True, "mode": "BuyWithDelivery"}},
+        }
+        offer_deliv = olx._parse_ad_json(ad_with_delivery)
+        self.assertIsNotNone(offer_deliv)
+        self.assertTrue(offer_deliv.has_delivery)
+        self.assertEqual(offer_deliv.delivery_label, "Przesyłka OLX")
+
+        ad_no_delivery = {
+            "id": 12346,
+            "title": "Konsola Switch",
+            "url": "https://www.olx.pl/d/oferta/test-2",
+            "price": {"regularPrice": {"value": 800}, "displayValue": "800 zł"},
+            "delivery": {"rock": {"active": False, "mode": "NotEligible"}},
+        }
+        offer_no_deliv = olx._parse_ad_json(ad_no_delivery)
+        self.assertIsNotNone(offer_no_deliv)
+        self.assertFalse(offer_no_deliv.has_delivery)
 
 
 if __name__ == "__main__":

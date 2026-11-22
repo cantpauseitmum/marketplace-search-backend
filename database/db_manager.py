@@ -75,6 +75,10 @@ class DatabaseManager:
                     existing_cols = [row[1] for row in cursor.fetchall()]
                     if "watched_search_id" not in existing_cols:
                         conn.execute("ALTER TABLE offers ADD COLUMN watched_search_id INTEGER REFERENCES watched_searches(id) ON DELETE SET NULL")
+                    if "has_delivery" not in existing_cols:
+                        conn.execute("ALTER TABLE offers ADD COLUMN has_delivery INTEGER DEFAULT 0")
+                    if "delivery_label" not in existing_cols:
+                        conn.execute("ALTER TABLE offers ADD COLUMN delivery_label TEXT DEFAULT ''")
             except Exception as e:
                 print(f"[DB Migration] Informacja o migracji: {e}")
 
@@ -186,8 +190,8 @@ class DatabaseManager:
                 INSERT INTO offers (
                     external_id, source, title, description, price, currency,
                     price_formatted, url, image_url, location, city, distance_km,
-                    published_at, query_id, watched_search_id, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    published_at, query_id, watched_search_id, has_delivery, delivery_label, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(source, url) DO UPDATE SET
                     title = excluded.title,
                     description = excluded.description,
@@ -198,6 +202,8 @@ class DatabaseManager:
                     city = excluded.city,
                     distance_km = excluded.distance_km,
                     published_at = excluded.published_at,
+                    has_delivery = excluded.has_delivery,
+                    delivery_label = excluded.delivery_label,
                     query_id = COALESCE(excluded.query_id, offers.query_id),
                     watched_search_id = COALESCE(excluded.watched_search_id, offers.watched_search_id),
                     updated_at = excluded.updated_at
@@ -219,6 +225,8 @@ class DatabaseManager:
                     offer.get("published_at", ""),
                     q_id,
                     w_id,
+                    1 if offer.get("has_delivery") else 0,
+                    offer.get("delivery_label", ""),
                     utc_now_iso(),
                 ),
             )

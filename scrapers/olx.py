@@ -62,10 +62,27 @@ class OLXScraper(BaseScraper):
         seen_urls = set()
 
         if query.location:
-            # Gdy podano lokalizację, używamy widoku web ze stanem pre-renderowanym (obsługuje miasto i promień)
+            # 1. Oferty lokalne dla wskazanego miasta i promienia
             web_offers = self._search_via_web(query)
             for o in web_offers:
                 if o.url not in seen_urls:
+                    seen_urls.add(o.url)
+                    offers.append(o)
+
+            # 2. Oferty ogólnokrajowe z aktywnym pakietem ochronnym / przesyłką
+            # Zgodnie z wymaganiem: oferty "Kup z przesyłką" wyświetlają się zawsze niezależnie od lokalizacji
+            nationwide_query = SearchQuery(
+                text=query.text,
+                location="",
+                radius_km=0,
+                search_in_description=query.search_in_description,
+                min_price=query.min_price,
+                max_price=query.max_price,
+                page=query.page,
+            )
+            nationwide_offers = self._search_via_web(nationwide_query)
+            for o in nationwide_offers:
+                if o.has_delivery and o.url not in seen_urls:
                     seen_urls.add(o.url)
                     offers.append(o)
         else:
@@ -163,8 +180,14 @@ class OLXScraper(BaseScraper):
             district = loc.get("district", {}).get("name") or loc.get("districtName") or ""
             location_str = f"{city}, {district}" if district else (city or "Polska")
 
-            # Jeśli szukamy w konkretnym mieście, a oferta pochodzi z innego miasta i promień = 0
-            if query.location and query.radius_km == 0:
+            delivery = item.get("delivery", {})
+            rock = delivery.get("rock", {}) if isinstance(delivery, dict) else {}
+            safedeal = item.get("safedeal", {})
+            has_delivery = bool((rock.get("active") and rock.get("mode") == "BuyWithDelivery") or (safedeal and safedeal.get("allowed_quantity")))
+            delivery_label = "Przesyłka OLX" if has_delivery else ""
+
+            # Jeśli szukamy w konkretnym mieście, a oferta pochodzi z innego miasta, nie ma przesyłki i promień = 0
+            if query.location and query.radius_km == 0 and not has_delivery:
                 city_clean = city.lower().strip()
                 target_clean = query.location.lower().strip()
                 if target_clean not in city_clean and city_clean not in target_clean:
@@ -204,6 +227,8 @@ class OLXScraper(BaseScraper):
                 city=city,
                 description=desc,
                 published_at=created_at[:10] if created_at else "Niedawno",
+                has_delivery=has_delivery,
+                delivery_label=delivery_label,
             )
         except Exception:
             return None
@@ -286,6 +311,13 @@ class OLXScraper(BaseScraper):
             desc = ad.get("description", "")
             created_time = ad.get("createdTime", "")
 
+            # Wykrywanie bezpiecznej przesyłki / pakietu ochronnego OLX
+            delivery = ad.get("delivery", {})
+            rock = delivery.get("rock", {}) if isinstance(delivery, dict) else {}
+            safedeal = ad.get("safedeal", {})
+            has_delivery = bool((rock.get("active") and rock.get("mode") == "BuyWithDelivery") or (safedeal and safedeal.get("allowed_quantity")))
+            delivery_label = "Przesyłka OLX" if has_delivery else ""
+
             return Offer(
                 source=self.name,
                 external_id=f"olx-{ad_id}",
@@ -299,6 +331,8 @@ class OLXScraper(BaseScraper):
                 city=city,
                 description=desc,
                 published_at=created_time[:10] if created_time else "Niedawno",
+                has_delivery=has_delivery,
+                delivery_label=delivery_label,
             )
         except Exception:
             return None

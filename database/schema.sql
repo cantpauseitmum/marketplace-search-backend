@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS offers (
     query_id INTEGER REFERENCES search_queries(id) ON DELETE SET NULL,
     watched_search_id INTEGER REFERENCES watched_searches(id) ON DELETE SET NULL,
     is_bookmarked INTEGER DEFAULT 0,
+    has_delivery INTEGER DEFAULT 0,
+    delivery_label TEXT DEFAULT '',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_source_url UNIQUE (source, url)

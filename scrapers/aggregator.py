@@ -10,6 +10,8 @@ from .base import BaseScraper, Offer, SearchQuery, ScraperResult
 from .olx import OLXScraper
 from .allegro_lokalnie import AllegroLokalnieScraper
 from .facebook import FacebookMarketplaceScraper
+from .vinted import VintedScraper
+from .swapie import SwapieScraper
 import os
 import sys
 
@@ -28,6 +30,8 @@ class MarketplaceAggregator:
             "olx": OLXScraper(),
             "allegro_lokalnie": AllegroLokalnieScraper(),
             "facebook": FacebookMarketplaceScraper(),
+            "vinted": VintedScraper(),
+            "swapie": SwapieScraper(),
         }
 
     def get_available_sources(self) -> List[Dict[str, Any]]:

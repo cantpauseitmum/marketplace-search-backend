@@ -9,7 +9,7 @@ import re
 
 @dataclass
 class Offer:
-    source: str  # 'OLX', 'Allegro Lokalnie', 'Facebook Marketplace'
+    source: str  # 'OLX', 'Allegro Lokalnie', 'Facebook Marketplace', 'Vinted', 'Swapie'
     external_id: str
     title: str
     price: Optional[float]
@@ -26,6 +26,8 @@ class Offer:
     published_at: str = ""
     matches_description: bool = False
     is_bookmarked: bool = False
+    has_delivery: bool = False  # Kup z przesyłką / Pakiet ochronny
+    delivery_label: str = ""    # np. "Przesyłka OLX", "Vinted (Ochrona)", "Swapie (InPost)"
 
     def to_dict(self) -> Dict[str, Any]:
         data = asdict(self)
@@ -45,7 +47,7 @@ class SearchQuery:
     search_in_description: bool = True
     min_price: Optional[float] = None
     max_price: Optional[float] = None
-    sources: List[str] = field(default_factory=lambda: ["OLX", "Allegro Lokalnie", "Facebook Marketplace"])
+    sources: List[str] = field(default_factory=lambda: ["OLX", "Allegro Lokalnie", "Facebook Marketplace", "Vinted", "Swapie"])
     page: int = 1
     raw_location: str = ""
 
@@ -119,15 +121,34 @@ class BaseScraper(ABC):
 
         return False
 
-    @staticmethod
-    def _matches_text(query_text: str, text: str) -> bool:
+    @classmethod
+    def _matches_text(cls, query_text: str, text: str) -> bool:
         """
         Sprawdza czy zadana fraza występuje w tekście w sposób semantycznie spójny:
         - Zachowuje granice słów (np. '2' nie pasuje do 'v2', '2024', '12', 'd2')
-        - Wymaga wystąpienia szukanej frazy (np. 'switch 2' jako spójnej całości, a nie 'switch' w tytule i '2 gry' na końcu)
+        - Obsługuje polskie znaki diakrytyczne (np. wiedzmin dopasowuje wiedźmin)
         """
         if not query_text or not text:
             return False
+
+        if cls._raw_matches(query_text, text):
+            return True
+
+        # Sprawdzenie ze znormalizowanymi polskimi znakami (np. ę->e, ó->o, ł->l, ź->z)
+        norm_q = cls._strip_diacritics(query_text)
+        norm_t = cls._strip_diacritics(text)
+        if norm_q != query_text or norm_t != text:
+            return cls._raw_matches(norm_q, norm_t)
+
+        return False
+
+    @staticmethod
+    def _strip_diacritics(s: str) -> str:
+        table = str.maketrans("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ", "acelnoszzACELNOSZZ")
+        return s.translate(table)
+
+    @staticmethod
+    def _raw_matches(query_text: str, text: str) -> bool:
 
         q_tokens = re.findall(r"[\w]+", query_text.lower())
         if not q_tokens:
